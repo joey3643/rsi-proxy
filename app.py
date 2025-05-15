@@ -5,29 +5,23 @@ app = Flask(__name__)
 
 @app.route('/rsi', methods=['GET'])
 def get_rsi():
+    symbol = request.args.get('symbol', 'ETHUSDT')
+    url = f'https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=5&limit=100'
+
     try:
-        symbol = request.args.get('symbol', 'ETHUSDT')
-        limit = 15
-        url = f'https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=5&limit={limit}'
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        
+        # 응답이 JSON이 아니면 예외 처리
+        if not res.text.strip().startswith('{'):
+            return jsonify({'error': 'Invalid response from Bybit', 'content': res.text}), 502
 
-        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+        data = res.json()
 
-        # 빈 응답 또는 오류 상태 확인
-        if response.status_code != 200:
-            return jsonify({'error': f'Status code {response.status_code}', 'body': response.text}), 500
+        candles = data.get("result", {}).get("list", [])
+        if len(candles) < 15:
+            return jsonify({'error': 'Not enough data'})
 
-        if not response.text.strip():
-            return jsonify({'error': 'Empty response from Bybit'}), 500
-
-        data = response.json()
-
-        if 'result' not in data or 'list' not in data['result']:
-            return jsonify({'error': 'Invalid response format', 'raw': data}), 500
-
-        closes = [float(row[4]) for row in reversed(data['result']['list'])]
-
-        if len(closes) < 15:
-            return jsonify({'error': 'Not enough data'}), 400
+        closes = [float(c[4]) for c in candles[-15:]]
 
         gains = losses = 0
         for i in range(1, len(closes)):
